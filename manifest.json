@@ -1,12 +1,17 @@
 {
   "biz-cockpit": {
     "title": "驾驶舱",
-    "exportedAt": "2026-09-05T10:25:49.682Z",
+    "exportedAt": "2026-09-05T10:34:14.412Z",
     "path": "/biz-cockpit/"
   },
-  "demo-publish": {
-    "title": "发布 Demo",
-    "exportedAt": "2026-09-05T10:29:26.882Z",
-    "path": "/demo-publish/"
+  "schedule-manager": {
+    "title": "日程管理",
+    "exportedAt": "2026-09-05T10:33:37.235Z",
+    "path": "/schedule-manager/"
+  },
+  "quote-widget": {
+    "title": "官网询价组件",
+    "exportedAt": "2026-09-05T10:49:10.654Z",
+    "path": "/quote-widget/"
   }
 }
