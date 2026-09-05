@@ -48,9 +48,16 @@
     <h1>获取报价</h1>
     <div class="sub">填写需求，一键发送询价邮件给我们，通常当天回复。</div>
     <label for="f-product">询价产品 *</label>
-    <input id="f-product" placeholder="如：304 不锈钢法兰 DN50" value="">
+    <input id="f-product" placeholder="如：304 不锈钢法兰 DN50" value="" list="dl-products">
+    <datalist id="dl-products"></datalist>
     <label for="f-qty">数量</label>
     <input id="f-qty" placeholder="如：200pcs / 5吨 / 10箱">
+    <label for="f-currency">报价币种</label>
+    <select id="f-currency" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;background:var(--bg)">
+      <option value="USD">USD 美元</option>
+      <option value="CNY">CNY 人民币</option>
+      <option value="EUR">EUR 欧元</option>
+    </select>
     <label for="f-company">公司名称</label>
     <input id="f-company" placeholder="你的公司 / 采购组织">
     <label for="f-name">联系人 *</label>
@@ -61,6 +68,7 @@
     <textarea id="f-msg" placeholder="材质、规格、交付时间、目标价等补充说明..."></textarea>
     <button class="btn" onclick="sendQuote()">📩 一键询价</button>
     <button class="btn btn-share" onclick="shareToX()" target="_blank" rel="noopener noreferrer">𝕏 分享到 X</button>
+    <button class="btn btn-share" onclick="sendFeedback()">💬 反馈建议</button>
     <div class="err" id="err"></div>
     <div class="hint">点击「一键询价」将唤起你的邮件客户端，确认发送即可。</div>
   </div>
@@ -70,6 +78,45 @@
   var BOSS_EMAIL = 'reqing3@foxmail.com';
   // 公网地址（publisher.js 发布目标），X 分享链接指向这里
   var PUBLIC_URL = 'https://qing3a.github.io/hlp-pages/quote-widget/';
+
+  // ---- 集成联动（v1.3.0）：产品目录下拉提示 ----
+  // 本地（iframe 与产品目录 App 同源）时读 product_catalog localStorage 填充 datalist；
+  // 公网无该数据 → datalist 为空，手动输入不受影响（零破坏）。
+  (function fillProductHints(){
+    try {
+      var list = JSON.parse(localStorage.getItem('product_catalog') || '[]');
+      var dl = document.getElementById('dl-products');
+      list.forEach(function(p){
+        if (p && p.name) {
+          var opt = document.createElement('option');
+          opt.value = p.name;
+          dl.appendChild(opt);
+        }
+      });
+    } catch (e) { /* 无产品数据则跳过 */ }
+  })();
+
+  // ---- 集成联动（v1.3.0）：客户反馈入口 ----
+  // 本地：POST /hlp/feedback（与 feedback-bus 对接，同源可用）；
+  // 公网：无宿主后端 → mailto 兜底（[HLP:strategy:反馈] 主题，老板收件箱可见）。
+  function sendFeedback(){
+    var product=document.getElementById('f-product').value.trim() || '（未填产品）';
+    var name=document.getElementById('f-name').value.trim() || '匿名客户';
+    var msg=prompt('请输入你的反馈或建议（对本次报价体验评分：好/差 可写在开头）：','');
+    if(!msg) return;
+    var rec={ appId:'quote-widget', rating:/好|赞|满意|不错/.test(msg)?1:-1, comment:'['+product+'] '+msg, context:{scene:'website-feedback', from:name} };
+    fetch('/hlp/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(rec)})
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(d&&d.ok){ alert('反馈已提交，感谢！'); return; }
+        throw new Error('fallback');
+      })
+      .catch(function(){
+        var subject=encodeURIComponent('[HLP:strategy:反馈] quote-widget '+(rec.rating===1?'like':'dislike'));
+        var body=encodeURIComponent('反馈：'+msg+'\n产品：'+product+'\n客户：'+name+'\n时间：'+new Date().toISOString());
+        window.open('mailto:'+BOSS_EMAIL+'?subject='+subject+'&body='+body,'_blank');
+      });
+  }
 
   // 分享到 X（tweet intent：产品摘要 + 询价引导 + 公网链接；新窗口且切断 opener）
   function shareToX(){
@@ -108,9 +155,10 @@
       'END-HLP-GROUP-META -->'
     ].join('\n');
     // 2) 询价载荷 JSON
+    var currency=document.getElementById('f-currency') ? document.getElementById('f-currency').value : '';
     var payload=JSON.stringify({
       products:[product], qty:qty, company:company,
-      name:name, email:email, message:msg, dueDate:''
+      name:name, email:email, message:msg, dueDate:'', currency:currency
     });
     var body=meta+'\n'+payload;
 
