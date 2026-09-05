@@ -1,6 +1,6 @@
 {
   "appId": "quote-widget",
-  "version": "v1.2.8",
-  "note": "新增「分享到 X」按钮（tweet intent 携产品摘要+公网链接）",
-  "publishedAt": "2026-09-05T18:37:23.164Z"
+  "version": "v1.3.0",
+  "note": "多币种报价（决策 dec-quote-widget-1 落地）+ 产品目录下拉联动 + 客户反馈入口",
+  "publishedAt": "2026-09-05T19:50:00.572Z"
 }
