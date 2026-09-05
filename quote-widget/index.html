@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>询价 — 一键询价</title>
+<!-- ============================================================
+  官网一键询价组件（断层 C / V1.2.4）
+  ------------------------------------------------------------
+  用途：把本页面（或下方 .hlp-quote-widget 片段）放到你的官网/落地页。
+  客户填写产品、数量、公司等信息后点「一键询价」→ 唤起邮件客户端
+  发送到老板邮箱（收件箱即询价线索池，无需任何后端/服务器）。
+
+  工作原理（HLP over Email / inquiry 命名空间）：
+    mailto 链接主题   = [HLP:inquiry:询价] + 产品名（Mail Bus 据此识别命名空间）
+    mailto 链接正文   = HLP-GROUP-META 元数据注释 + JSON 询价载荷
+    老板侧 /hlp/inquiries/sync → 收信识别 → 写入询价线索池（CRM「📥 询价线索」可见）
+
+  部署：
+    1) 把 apps/quote-widget/index.html 复制到你官网目录
+    2) 用 hlp_publish_app / publisher.js 发布到 GitHub Pages（或任意静态托管）
+    3) 也可只复制下方 <div id="hlp-quote-widget"></div> + <script> 片段嵌入现有页面
+
+  注意：mailto 依赖客户本机邮件客户端；如需纯网页提交（无客户端），
+  需在公网部署一个收信 API（V2，见设计案）。
+============================================================ -->
+<style>
+  :root{--bg:#f4f3ee;--card:#fff;--text:#1a1b1c;--text2:#6b7280;--border:#e4e3dd;--accent:#4a6cf7;--accent-soft:rgba(74,108,247,.08);--radius:10px}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"PingFang SC","Segoe UI",sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.6;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:24px 12px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:24px;width:100%;max-width:520px;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+  h1{font-size:18px;font-weight:700;margin-bottom:4px}
+  .sub{font-size:12px;color:var(--text2);margin-bottom:20px}
+  label{display:block;font-size:12px;font-weight:600;color:var(--text2);margin:12px 0 4px}
+  input,textarea{width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;background:var(--bg);transition:border-color .15s}
+  input:focus,textarea:focus{outline:none;border-color:var(--accent)}
+  textarea{resize:vertical;min-height:64px}
+  .btn{width:100%;margin-top:20px;padding:12px;border:none;border-radius:8px;background:var(--accent);color:#fff;font-size:15px;font-weight:600;cursor:pointer;transition:opacity .15s}
+  .btn:hover{opacity:.9}
+  .hint{font-size:11px;color:var(--text2);margin-top:10px;text-align:center}
+  .err{font-size:12px;color:#ea6668;margin-top:8px;display:none}
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>获取报价</h1>
+    <div class="sub">填写需求，一键发送询价邮件给我们，通常当天回复。</div>
+    <label for="f-product">询价产品 *</label>
+    <input id="f-product" placeholder="如：304 不锈钢法兰 DN50" value="">
+    <label for="f-qty">数量</label>
+    <input id="f-qty" placeholder="如：200pcs / 5吨 / 10箱">
+    <label for="f-company">公司名称</label>
+    <input id="f-company" placeholder="你的公司 / 采购组织">
+    <label for="f-name">联系人 *</label>
+    <input id="f-name" placeholder="你的称呼">
+    <label for="f-email">联系邮箱 *</label>
+    <input id="f-email" placeholder="you@company.com">
+    <label for="f-msg">需求说明</label>
+    <textarea id="f-msg" placeholder="材质、规格、交付时间、目标价等补充说明..."></textarea>
+    <button class="btn" onclick="sendQuote()">📩 一键询价</button>
+    <div class="err" id="err"></div>
+    <div class="hint">点击后将唤起你的邮件客户端，确认发送即可。</div>
+  </div>
+
+<script>
+  // ---- 配置：把这里改成老板/你的收件邮箱 ----
+  var BOSS_EMAIL = 'reqing3@foxmail.com';
+
+  function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+
+  function sendQuote(){
+    var product=document.getElementById('f-product').value.trim();
+    var qty=document.getElementById('f-qty').value.trim();
+    var company=document.getElementById('f-company').value.trim();
+    var name=document.getElementById('f-name').value.trim();
+    var email=document.getElementById('f-email').value.trim();
+    var msg=document.getElementById('f-msg').value.trim();
+    var err=document.getElementById('err');
+    err.style.display='none';
+    if(!product||!name||!email){err.textContent='请至少填写：产品、联系人、联系邮箱。';err.style.display='block';return}
+
+    // 1) meta 元数据（Mail Bus 据此识别为 inquiry 命名空间）
+    var ts=new Date().toISOString();
+    var mid='inq-w-'+Date.now().toString(36);
+    var meta=[
+      '<!-- HLP-GROUP-META',
+      'groupId: g-inq-'+Date.now().toString(36),
+      'namespace: inquiry',
+      'groupName: 询价',
+      'messageType: inquiry',
+      'senderEmail: '+email,
+      'senderName: '+name,
+      'timestamp: '+ts,
+      'messageId: '+mid,
+      'END-HLP-GROUP-META -->'
+    ].join('\n');
+    // 2) 询价载荷 JSON
+    var payload=JSON.stringify({
+      products:[product], qty:qty, company:company,
+      name:name, email:email, message:msg, dueDate:''
+    });
+    var body=meta+'\n'+payload;
+
+    // 3) mailto 链接（主题带 [HLP:inquiry:询价] 前缀）
+    var subject='[HLP:inquiry:询价] '+product;
+    var mailto='mailto:'+encodeURIComponent(BOSS_EMAIL)+
+      '?subject='+encodeURIComponent(subject)+
+      '&body='+encodeURIComponent(body);
+    window.location.href=mailto;
+  }
+</script>
+</body>
+</html>
