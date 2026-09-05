@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>日程管理</title>
+<style>
+:root{
+  --bg:#f4f3ee;--card:#fff;--text:#1a1b1c;--text2:#6b7280;--border:#e4e3dd;
+  --accent:#4a6cf7;--accent-soft:rgba(74,108,247,.08);--radius:10px;
+  --green:#52c41a;--red:#ea6668;--orange:#faad14;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,'PingFang SC','Segoe UI',sans-serif;background:var(--bg);color:var(--text);font-size:13px;line-height:1.5;padding:12px}
+.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.header h1{font-size:15px;font-weight:600}
+.stats{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.stat-card{flex:1;min-width:70px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:8px;text-align:center}
+.stat-card .num{font-size:18px;font-weight:600}
+.stat-card .label{font-size:10px;color:var(--text2);margin-top:2px}
+.stat-card.upcoming .num{color:var(--accent)}
+.stat-card.pending .num{color:var(--orange)}
+.stat-card.overdue .num{color:var(--red)}
+.stat-card.done .num{color:var(--green)}
+.tabs{display:flex;gap:4px;margin-bottom:10px;border-bottom:1px solid var(--border);padding-bottom:0}
+.tab{padding:6px 12px;font-size:12px;cursor:pointer;border-bottom:2px solid transparent;color:var(--text2)}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:500}
+.panel{display:none}
+.panel.active{display:block}
+.list{display:flex;flex-direction:column;gap:6px;max-height:340px;overflow-y:auto}
+.item{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:8px 10px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.item .main{flex:1;min-width:0}
+.item .title{font-size:12.5px;font-weight:500;margin-bottom:2px}
+.item .meta{font-size:10.5px;color:var(--text2)}
+.item .badge{font-size:10px;padding:2px 6px;border-radius:4px;flex-shrink:0}
+.badge.scheduled{background:var(--accent-soft);color:var(--accent)}
+.badge.completed{background:rgba(82,196,26,.1);color:var(--green)}
+.badge.pending{background:rgba(250,173,20,.1);color:var(--orange)}
+.badge.high{background:rgba(234,102,104,.1);color:var(--red)}
+.badge.medium{background:rgba(250,173,20,.1);color:var(--orange)}
+.badge.low{background:rgba(107,114,128,.1);color:var(--text2)}
+.badge.mail{background:rgba(74,108,247,.06);color:var(--text2);font-size:9px}
+.item .actions{display:flex;gap:4px;flex-shrink:0}
+.btn{font-size:11px;padding:3px 8px;border:1px solid var(--border);border-radius:5px;background:var(--card);color:var(--text2);cursor:pointer}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.btn.primary:hover{opacity:.9}
+.date-group{font-size:11px;font-weight:600;color:var(--text2);margin:8px 0 4px;padding-left:2px}
+.empty{text-align:center;color:var(--text2);font-size:12px;padding:24px 0}
+.import-bar{margin-top:10px;padding:8px;background:var(--accent-soft);border-radius:8px;display:flex;justify-content:space-between;align-items:center}
+.import-bar .text{font-size:11px;color:var(--accent)}
+.add-form{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;display:none}
+.add-form.show{display:block}
+.add-form input,.add-form select{width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px;margin-bottom:6px}
+.add-form .row{display:flex;gap:6px}
+.add-form .row input{flex:1}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>📅 日程管理</h1>
+  <button class="btn primary" onclick="toggleAdd()">+ 新建</button>
+</div>
+
+<div class="stats" id="stats"></div>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('events')">日程</div>
+  <div class="tab" onclick="switchTab('todos')">待办</div>
+</div>
+
+<div class="add-form" id="add-form">
+  <input id="f-title" placeholder="标题">
+  <div class="row">
+    <input id="f-date" type="date" placeholder="日期">
+    <input id="f-time" type="time" placeholder="时间">
+  </div>
+  <select id="f-priority" style="display:none">
+    <option value="medium">中优先级</option>
+    <option value="high">高优先级</option>
+    <option value="low">低优先级</option>
+  </select>
+  <div style="display:flex;gap:6px">
+    <button class="btn primary" onclick="doAdd()">确认</button>
+    <button class="btn" onclick="toggleAdd()">取消</button>
+  </div>
+</div>
+
+<div class="panel active" id="panel-events">
+  <div class="list" id="events-list"></div>
+</div>
+<div class="panel" id="panel-todos">
+  <div class="list" id="todos-list"></div>
+</div>
+
+<div class="import-bar">
+  <span class="text">📧 可从 mail-collab 邮件提取日程/待办导入</span>
+  <button class="btn" onclick="alert('在 mail-collab 中展开邮件→日程卡片→点击「导入日程管理」')">查看说明</button>
+</div>
+
+<script>
+const PROXY='/hlp/proxy';
+const APP_ID='schedule-manager';
+let currentTab='events';
+
+async function callProxy(tool,args){
+  const r=await fetch(PROXY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appId:APP_ID,tool,args})});
+  return r.json();
+}
+
+async function loadStats(){
+  const r=await callProxy('get_stats',{});
+  const s=r.stats||r.structuredContent?.stats||{};
+  document.getElementById('stats').innerHTML=`
+    <div class="stat-card upcoming"><div class="num">${s.upcomingEvents||0}</div><div class="label">待进行日程</div></div>
+    <div class="stat-card pending"><div class="num">${s.pendingTodos||0}</div><div class="label">待处理待办</div></div>
+    <div class="stat-card overdue"><div class="num">${s.overdueTodos||0}</div><div class="label">逾期</div></div>
+    <div class="stat-card done"><div class="num">${(s.completedEvents||0)+(s.completedTodos||0)}</div><div class="label">已完成</div></div>
+  `;
+}
+
+async function loadEvents(){
+  const r=await callProxy('list_events',{status:'scheduled'});
+  const events=r.events||r.structuredContent?.events||[];
+  const list=document.getElementById('events-list');
+  if(!events.length){list.innerHTML='<div class="empty">暂无待进行日程</div>';return}
+  let html='',lastDate='';
+  for(const e of events){
+    if(e.date!==lastDate){html+=`<div class="date-group">${e.date}</div>`;lastDate=e.date}
+    html+=`<div class="item">
+      <div class="main">
+        <div class="title">${esc(e.title)} ${e.source==='mail-import'?'<span class="badge mail">📧邮件</span>':''}</div>
+        <div class="meta">${e.time||'09:00'} · ${e.duration||60}分钟${e.location?' · '+esc(e.location):''}</div>
+      </div>
+      <span class="badge ${e.status}">${e.status==='scheduled'?'待进行':'已完成'}</span>
+      <div class="actions"><button class="btn" onclick="completeEvent('${e.id}')">完成</button></div>
+    </div>`;
+  }
+  list.innerHTML=html;
+}
+
+async function loadTodos(){
+  const r=await callProxy('list_todos',{});
+  const todos=r.todos||r.structuredContent?.todos||[];
+  const list=document.getElementById('todos-list');
+  if(!todos.length){list.innerHTML='<div class="empty">暂无待办</div>';return}
+  let html='';
+  for(const t of todos){
+    const done=t.status==='completed';
+    html+=`<div class="item" style="${done?'opacity:.5':''}">
+      <div class="main">
+        <div class="title" style="${done?'text-decoration:line-through':''}">${esc(t.title)} ${t.source==='mail-import'?'<span class="badge mail">📧邮件</span>':''}</div>
+        <div class="meta">${t.dueDate?'截止 '+t.dueDate:'无截止日期'}${t.description?' · '+esc(t.description.slice(0,30)):''}</div>
+      </div>
+      <span class="badge ${t.priority}">${t.priority==='high'?'高':t.priority==='medium'?'中':'低'}</span>
+      <div class="actions">
+        ${done?'<button class="btn" onclick="reopenTodo(\''+t.id+'\')">撤销</button>':'<button class="btn" onclick="completeTodo(\''+t.id+'\')">完成</button>'}
+      </div>
+    </div>`;
+  }
+  list.innerHTML=html;
+}
+
+async function completeEvent(id){await callProxy('update_event',{id,status:'completed'});refresh()}
+async function completeTodo(id){await callProxy('update_todo',{id,status:'completed'});refresh()}
+async function reopenTodo(id){await callProxy('update_todo',{id,status:'pending'});refresh()}
+
+function switchTab(tab){
+  currentTab=tab;
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',i===(tab==='events'?0:1)));
+  document.getElementById('panel-events').classList.toggle('active',tab==='events');
+  document.getElementById('panel-todos').classList.toggle('active',tab==='todos');
+  document.getElementById('f-priority').style.display=tab==='todos'?'block':'none';
+}
+
+function toggleAdd(){document.getElementById('add-form').classList.toggle('show')}
+
+async function doAdd(){
+  const title=document.getElementById('f-title').value.trim();
+  const date=document.getElementById('f-date').value;
+  if(!title||!date){alert('请填写标题和日期');return}
+  if(currentTab==='events'){
+    await callProxy('create_event',{title,date,time:document.getElementById('f-time').value||'09:00'});
+  }else{
+    await callProxy('create_todo',{title,dueDate:date,priority:document.getElementById('f-priority').value});
+  }
+  document.getElementById('f-title').value='';document.getElementById('f-date').value='';
+  toggleAdd();refresh();
+}
+
+function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+
+async function refresh(){await loadStats();await loadEvents();await loadTodos()}
+refresh();
+</script>
+</body>
+</html>
