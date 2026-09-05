@@ -11,7 +11,8 @@
   },
   "quote-widget": {
     "title": "官网询价组件",
-    "exportedAt": "2026-09-05T10:49:10.654Z",
-    "path": "/quote-widget/"
+    "exportedAt": "2026-09-05T13:56:40.735Z",
+    "path": "/quote-widget/",
+    "version": "v1.2.5"
   }
 }
