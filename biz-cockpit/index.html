@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>轻量企业数据驾驶舱</title>
+<style>
+  :root{--bg:#f4f3ee;--card:#fff;--text:#1a1b1c;--text2:#6b7280;--border:#e4e3dd;--accent:#4a6cf7;--accent-soft:rgba(74,108,247,.08);--radius:10px}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"PingFang SC","Segoe UI",sans-serif;margin:0;padding:14px;background:var(--bg);color:var(--text);font-size:13px}
+  h1{font-size:16px;font-weight:600;margin:0 0 10px}
+  .card{background:var(--card);border-radius:var(--radius);padding:14px;margin-bottom:10px;border:1px solid var(--border)}
+  h2{font-size:12px;font-weight:600;margin:0 0 10px;color:var(--text2);letter-spacing:.5px}
+  .kpi{display:flex;gap:10px;flex-wrap:wrap}
+  .kpi-item{flex:1 1 100px;min-width:90px;padding:10px 12px;background:var(--accent-soft);border-radius:var(--radius)}
+  .kpi-num{font-size:20px;font-weight:600;color:var(--text)}
+  .kpi-label{font-size:11px;color:var(--text2);margin-top:2px}
+  .top-list{margin:0;padding:0;list-style:none}
+  .top-item{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);font-size:12px}
+  .top-item:last-child{border-bottom:none}
+  .top-name{font-weight:500}
+  .top-amt{color:var(--accent);font-weight:600;font-variant-numeric:tabular-nums}
+  .note{font-size:11px;color:var(--text2);margin-top:8px;line-height:1.5}
+  .loading,.error{padding:20px;text-align:center;color:var(--text2);font-size:12px}
+  .error{color:#c0392b}
+  .refresh-btn{float:right;font-size:11px;padding:3px 10px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text2);cursor:pointer}
+  .refresh-btn:hover{border-color:var(--accent);color:var(--accent)}
+  .dataset-tag{display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px;background:var(--accent-soft);color:var(--accent);font-weight:600;margin-left:6px;vertical-align:middle}
+</style>
+</head>
+<body>
+  <h1>轻量企业数据驾驶舱 <span class="dataset-tag" id="ds-tag">加载中</span><button class="refresh-btn" onclick="loadKpis()">刷新</button><button class="refresh-btn" onclick="exportCSV()">导出CSV</button><button class="refresh-btn" onclick="exportJSON()">导出JSON</button></h1>
+  <div class="card">
+    <h2>核心指标</h2>
+    <div id="kpi-area"><div class="loading">正在从业务 MCP 加载数据...</div></div>
+    <p class="note" id="kpi-note">数据经宿主代理桥（/hlp/proxy）从 biz-cockpit MCP Server 实时获取，iframe 零 MCP 客户端（G.2）。</p>
+  </div>
+  <div class="card">
+    <h2>Top 客户</h2>
+    <div id="top-area"><div class="loading">...</div></div>
+  </div>
+  <div class="card">
+    <h2>月度趋势</h2>
+    <div id="trend-area"><div class="loading">...</div></div>
+  </div>
+  <div class="card">
+    <h2>联动说明</h2>
+    <p class="note">本 iframe 为纯表现层，不持有 MCP 客户端；业务调用经 <code>POST /hlp/proxy</code> 由宿主代调 biz-cockpit MCP Server。下行 notify 经 postMessage 推送（见 G.2 / G.3）。</p>
+    <p class="note" style="margin-top:8px"><button class="refresh-btn" id="hlp-send" style="float:none">上报 ui_action（测试上行腿）</button></p>
+    <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border)">
+      <div style="font-size:11px;color:var(--text2);margin-bottom:6px">这个看板对你有帮助吗？（自进化反馈 · V0.1）</div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <button class="fb-btn" data-rating="1" style="font-size:11px;padding:3px 10px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text2);cursor:pointer;opacity:0.6">👍 有帮助</button>
+        <button class="fb-btn" data-rating="-1" style="font-size:11px;padding:3px 10px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text2);cursor:pointer;opacity:0.6">👎 待改进</button>
+        <span id="fb-status" style="font-size:11px;color:var(--text2);margin-left:4px"></span>
+      </div>
+      <div id="fb-comment-box" style="display:none;margin-top:8px">
+        <textarea id="fb-comment" placeholder="可选：说说哪里需要改进（最多2000字）" style="width:100%;height:56px;padding:6px;border:1px solid var(--border);border-radius:6px;font-size:12px;resize:vertical;font-family:inherit;box-sizing:border-box"></textarea>
+        <button id="fb-submit" style="margin-top:6px;font-size:11px;padding:3px 12px;border:1px solid var(--accent);border-radius:6px;background:var(--accent);color:#fff;cursor:pointer">提交反馈</button>
+      </div>
+    </div>
+  </div>
+<script>
+function fmtMoney(n){if(n==null)return '-';return '¥'+Number(n).toLocaleString('zh-CN',{maximumFractionDigits:0})}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+async function loadKpis(){
+  var kpiArea=document.getElementById('kpi-area');
+  var topArea=document.getElementById('top-area');
+  var trendArea=document.getElementById('trend-area');
+  var tag=document.getElementById('ds-tag');
+  var lastKpi=null;
+  kpiArea.innerHTML='<div class="loading">加载中...</div>';
+  try{
+    var r=await fetch('/hlp/proxy',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({appId:'biz-cockpit',tool:'sales_kpis',args:{}})});
+    var j=await r.json();
+    if(!j.ok){kpiArea.innerHTML='<div class="error">加载失败：'+esc(j.detail||j.code||'未知错误')+'</div>';topArea.innerHTML='';trendArea.innerHTML='';return}
+    lastKpi=j;
+    var s=j.summary||{};
+    tag.textContent=j.datasetName||'当前数据集';
+    var items=[
+      {num:fmtMoney(s.totalAmount),label:'总营收'},
+      {num:(s.recoveryRate!=null?s.recoveryRate+'%':'-'),label:'回款率'},
+      {num:(s.orderCount!=null?s.orderCount:'-'),label:'订单数'},
+      {num:fmtMoney(s.paidAmount),label:'已回款'},
+      {num:fmtMoney(s.pendingAmount),label:'待回款'},
+    ];
+    kpiArea.innerHTML='<div class="kpi">'+items.map(function(it){return '<div class="kpi-item"><div class="kpi-num">'+esc(it.num)+'</div><div class="kpi-label">'+esc(it.label)+'</div></div>'}).join('')+'</div>';
+    var tops=j.topCustomers||[];
+    if(tops.length){
+      topArea.innerHTML='<ul class="top-list">'+tops.slice(0,5).map(function(c){return '<li class="top-item"><span class="top-name">'+esc(c.customer)+'</span><span class="top-amt">'+fmtMoney(c.amount)+'</span></li>'}).join('')+'</ul>';
+    }else{
+      topArea.innerHTML='<div class="note">暂无客户数据</div>';
+    }
+    // 月度趋势折线图（纯 SVG，v1.1.22）
+    var monthly=j.monthly||[];
+    if(monthly.length){
+      trendArea.innerHTML=renderTrend(monthly);
+    }else{
+      trendArea.innerHTML='<div class="note">暂无月度数据</div>';
+    }
+  }catch(e){
+    kpiArea.innerHTML='<div class="error">代理桥请求失败：'+esc(e.message)+'</div>';
+    topArea.innerHTML='';
+    trendArea.innerHTML='';
+  }
+}
+// 纯 SVG 折线图（月度营收趋势）
+function renderTrend(monthly){
+  var w=360,h=150,pad={l:44,r:12,t:12,b:26};
+  var iw=w-pad.l-pad.r,ih=h-pad.t-pad.b;
+  var max=Math.max.apply(null,monthly.map(function(m){return m.amount}));
+  var min=Math.min.apply(null,monthly.map(function(m){return m.amount}));
+  var range=max-min||1;
+  var pts=monthly.map(function(m,i){
+    return {x:pad.l+(i/(monthly.length-1||1))*iw,y:pad.t+ih-((m.amount-min)/range)*ih,month:m.month,amount:m.amount,orders:m.orders};
+  });
+  var d=pts.map(function(p,i){return(i===0?'M':'L')+p.x.toFixed(1)+','+p.y.toFixed(1)}).join(' ');
+  var areaD=d+' L'+pts[pts.length-1].x.toFixed(1)+','+(pad.t+ih)+' L'+pts[0].x.toFixed(1)+','+(pad.t+ih)+' Z';
+  var svg='<svg viewBox="0 0 '+w+' '+h+'" style="width:100%;height:auto;display:block">';
+  svg+='<defs><linearGradient id="tg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#4a6cf7" stop-opacity="0.15"/><stop offset="100%" stop-color="#4a6cf7" stop-opacity="0.02"/></linearGradient></defs>';
+  // 网格线
+  [0,0.5,1].forEach(function(r){
+    var y=pad.t+ih*r;
+    svg+='<line x1="'+pad.l+'" y1="'+y.toFixed(1)+'" x2="'+(w-pad.r)+'" y2="'+y.toFixed(1)+'" stroke="#e4e3dd" stroke-width="0.5"/>';
+  });
+  // 面积
+  svg+='<path d="'+areaD+'" fill="url(#tg)"/>';
+  // 折线
+  svg+='<path d="'+d+'" fill="none" stroke="#4a6cf7" stroke-width="2" stroke-linejoin="round"/>';
+  // 数据点
+  pts.forEach(function(p){
+    svg+='<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="2.5" fill="#fff" stroke="#4a6cf7" stroke-width="1.5"/>';
+  });
+  // Y 轴标签
+  svg+='<text x="'+(pad.l-5)+'" y="'+(pad.t+3)+'" text-anchor="end" font-size="9" fill="#6b7280">'+fmtMoney(max)+'</text>';
+  svg+='<text x="'+(pad.l-5)+'" y="'+(pad.t+ih+3)+'" text-anchor="end" font-size="9" fill="#6b7280">'+fmtMoney(min)+'</text>';
+  // X 轴标签（每隔几个显示）
+  var step=Math.ceil(monthly.length/7);
+  pts.forEach(function(p,i){
+    if(i%step===0||i===pts.length-1){
+      svg+='<text x="'+p.x.toFixed(1)+'" y="'+(h-8)+'" text-anchor="middle" font-size="9" fill="#6b7280">'+p.month.substring(5)+'</text>';
+    }
+  });
+  svg+='</svg>';
+  return svg;
+}
+// 下行 notify 监听（宿主 /hlp/events → postMessage）
+window.addEventListener('message',function(ev){
+  if(ev.data&&ev.data.type==='hlp:notify'){
+    if(ev.data.refreshTarget==='dashboard'||ev.data.eventType==='insight_ready'){
+      loadKpis();
+    }
+  }
+});
+// ui_action 上行（测试上行腿；宿主面板底部日志显示）
+var sendBtn=document.getElementById('hlp-send');
+if(sendBtn)sendBtn.addEventListener('click',function(){
+  window.parent.postMessage({type:'ui_action',appId:'biz-cockpit',payload:{action:'demo.ping',ts:Date.now()}},'*');
+});
+// 自进化反馈钩子（v1.1.20 V0.1：收集存储，不做自动分析）
+var fbRating=null;
+document.querySelectorAll('.fb-btn').forEach(function(btn){
+  btn.addEventListener('click',function(){
+    fbRating=parseInt(btn.dataset.rating,10);
+    document.querySelectorAll('.fb-btn').forEach(function(b){b.style.opacity='0.4';b.style.borderColor='var(--border)';b.style.color='var(--text2)';});
+    btn.style.opacity='1';btn.style.borderColor='var(--accent)';btn.style.color='var(--accent)';
+    document.getElementById('fb-comment-box').style.display='block';
+    document.getElementById('fb-status').textContent='';
+    document.getElementById('fb-status').style.color='var(--text2)';
+  });
+});
+var fbSubmit=document.getElementById('fb-submit');
+if(fbSubmit)fbSubmit.addEventListener('click',function(){
+  if(fbRating===null)return;
+  var comment=document.getElementById('fb-comment').value;
+  fetch('/hlp/feedback',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({appId:'biz-cockpit',rating:fbRating,comment:comment,context:{page:'dashboard',kpiLoaded:!!document.querySelector('.kpi')}})}).then(function(r){return r.json();}).then(function(j){
+    if(j.ok){document.getElementById('fb-status').textContent='✓ 已收到，感谢反馈';document.getElementById('fb-status').style.color='#52c41a';document.getElementById('fb-comment-box').style.display='none';document.getElementById('fb-comment').value='';fbRating=null;document.querySelectorAll('.fb-btn').forEach(function(b){b.style.opacity='0.4';b.style.borderColor='var(--border)';b.style.color='var(--text2)';});}
+    else{document.getElementById('fb-status').textContent='提交失败: '+(j.code||'unknown');document.getElementById('fb-status').style.color='#ea6668';}
+  }).catch(function(e){document.getElementById('fb-status').textContent='网络错误: '+e.message;document.getElementById('fb-status').style.color='#ea6668';});
+});
+// 导出 CSV（销售明细，v1.1.22）
+function exportCSV(){
+  if(!lastKpi){alert('请先加载数据');return}
+  fetch('/hlp/proxy',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({appId:'biz-cockpit',tool:'query_sales',args:{limit:500}})}).then(function(r){return r.json()}).then(function(j){
+    if(!j.ok){alert('导出失败：'+(j.detail||j.code));return}
+    var rows=j.rows||[];
+    var csv='date,customer,product,amount,status,salesperson\n';
+    csv+=rows.map(function(r){return [r.date,r.customer,r.product,r.amount,r.status,r.salesperson||''].map(function(v){return '"'+String(v==null?'':v).replace(/"/g,'""')+'"'}).join(',')}).join('\n');
+    downloadFile(csv,'sales_'+new Date().toISOString().slice(0,10)+'.csv','text/csv;charset=utf-8');
+  }).catch(function(e){alert('导出失败：'+e.message)});
+}
+// 导出 JSON（KPI+客户+月度+销售明细，v1.1.22）
+function exportJSON(){
+  if(!lastKpi){alert('请先加载数据');return}
+  fetch('/hlp/proxy',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({appId:'biz-cockpit',tool:'query_sales',args:{limit:500}})}).then(function(r){return r.json()}).then(function(j){
+    var data={exportedAt:new Date().toISOString(),dataset:lastKpi.datasetName||'',summary:lastKpi.summary||{},topCustomers:lastKpi.topCustomers||[],monthly:lastKpi.monthly||[],sales:j.rows||[]};
+    downloadFile(JSON.stringify(data,null,2),'cockpit_'+new Date().toISOString().slice(0,10)+'.json','application/json');
+  }).catch(function(e){alert('导出失败：'+e.message)});
+}
+function downloadFile(content,filename,type){
+  var blob=new Blob(['\ufeff'+content],{type:type});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');
+  a.href=url;a.download=filename;
+  document.body.appendChild(a);a.click();
+  document.body.removeChild(a);URL.revokeObjectURL(url);
+}
+loadKpis();
+</script>
+</body>
+</html>
